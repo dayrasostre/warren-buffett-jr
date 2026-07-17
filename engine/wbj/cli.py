@@ -20,6 +20,7 @@ from wbj.core.formulas import yoy
 from wbj.providers.cache import Cache
 from wbj.providers.edgar import EdgarProvider
 from wbj.providers.fmp import FMPProvider
+from wbj.quick import quick_scorecard
 
 app = typer.Typer()
 
@@ -34,6 +35,9 @@ _OCF_TAGS = ["NetCashProvidedByUsedInOperatingActivities"]
 _CAPEX_TAGS = ["PaymentsToAcquirePropertyPlantAndEquipment"]
 _DEBT_TAGS = ["LongTermDebtNoncurrent", "LongTermDebt"]
 _EQUITY_TAGS = ["StockholdersEquity"]
+_OP_INCOME_TAGS = ["OperatingIncomeLoss"]
+_GROSS_PROFIT_TAGS = ["GrossProfit"]
+_INTEREST_TAGS = ["InterestExpense", "InterestExpenseNonoperating"]
 
 # Scoring anchors (0-10) — MVP defaults, aligned with Cerebro-style bands.
 _ANCHORS_REV_GROWTH = [(-0.10, 0.0), (0.0, 3.0), (0.10, 6.0), (0.25, 9.0), (0.40, 10.0)]
@@ -90,6 +94,9 @@ def _build_packet(ticker: str) -> dict:
             "capex": _annual_series(facts, _CAPEX_TAGS),
             "long_term_debt": _annual_series(facts, _DEBT_TAGS),
             "equity": _annual_series(facts, _EQUITY_TAGS),
+            "operating_income": _annual_series(facts, _OP_INCOME_TAGS),
+            "gross_profit": _annual_series(facts, _GROSS_PROFIT_TAGS),
+            "interest_expense": _annual_series(facts, _INTEREST_TAGS),
         },
     }
     if fmp.available:
@@ -185,6 +192,7 @@ def _compute(packet: dict) -> dict:
                 "coverage": round(financial.coverage(), 2),
             },
         },
+        "scorecard": quick_scorecard(packet),
     }
 
 
@@ -249,6 +257,26 @@ def analyze(ticker: str) -> None:
         f"(score {cat['score10']}/10, coverage {cat['coverage']:.0%})"
     )
     typer.echo(f"\nSaved: {out}/packet.json, scores.json")
+
+
+@app.command()
+def scorecard(ticker: str) -> None:
+    """Quick 1-10 scorecard across the 6 agent categories."""
+    settings, _, _ = _providers()
+    p = _build_packet(ticker)
+    sc = quick_scorecard(p)
+    out = _out_dir(settings, ticker)
+    (out / "scorecard.json").write_text(json.dumps(sc, indent=2))
+
+    typer.echo(f"\n=== Quick Scorecard — {p['entity']} ({p['ticker']}) ===")
+    for row in sc["categories"]:
+        if row["status"] == "scored":
+            bar = "█" * int(round(row["score10"])) + "░" * (10 - int(round(row["score10"])))
+            typer.echo(f"{row['label']:<28} {bar}  {row['score10']}/10  ({row['points']}/{row['max_points']:.0f} pts)")
+        else:
+            typer.echo(f"{row['label']:<28} {'·' * 10}  N/S — {row['reason']}")
+    typer.echo(f"\nOverall (quick): {sc['overall_10']}/10 on {sc['evidence_points_covered']}/100 evidence pts")
+    typer.echo(f"Saved: {out}/scorecard.json")
 
 
 @app.command()

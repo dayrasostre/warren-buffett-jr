@@ -116,6 +116,19 @@ PAGE = """<!doctype html>
   .total .label { font-size:13px; color:var(--ink2); }
   .total .pts { font-size:20px; font-weight:700; }
   .total .pts small { font-size:13px; font-weight:500; color:var(--muted); }
+  .sc { margin-top:18px; padding-top:16px; border-top:1px solid var(--grid); }
+  .sc h3 { font-size:13px; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--muted); margin-bottom:12px; }
+  .sc .overall { display:flex; align-items:baseline; gap:10px; margin-bottom:14px; }
+  .sc .overall .big { font-size:40px; font-weight:800; letter-spacing:-.03em; }
+  .sc .overall .of { font-size:14px; color:var(--muted); }
+  .sc .overall .cov { font-size:12px; color:var(--ink2); margin-left:auto; text-align:right; }
+  .srow { display:grid; grid-template-columns: 172px 1fr 64px; gap:10px;
+    align-items:center; margin-bottom:9px; font-size:13px; }
+  .srow .nm { color:var(--ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .srow .v { text-align:right; font-weight:700; font-variant-numeric:tabular-nums; }
+  .srow.ns .nm, .srow.ns .v { color:var(--muted); font-weight:500; }
+  .srow.ns .track { opacity:.45; }
   .foot { margin-top:20px; color:var(--muted); font-size:12px; line-height:1.6; }
   .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--grid);
     border-top-color:var(--blue); border-radius:50%; animation:r .7s linear infinite;
@@ -165,6 +178,24 @@ sugg.addEventListener('click', e => {
 const pct = x => typeof x === 'number' ? (x * 100).toFixed(1) + '%' : x;
 const n10 = x => typeof x === 'number' ? x.toFixed(1) : x;
 
+function scorecardHtml(sc) {
+  if (!sc) return '';
+  const rows = sc.categories.map(r => {
+    if (r.status === 'scored') {
+      return `<div class="srow"><span class="nm" title="${r.label}">${r.label}</span>
+        <div class="track"><div class="fill" data-w="${r.score10 * 10}" style="width:0%"></div></div>
+        <span class="v">${r.score10.toFixed(1)}/10</span></div>`;
+    }
+    return `<div class="srow ns"><span class="nm" title="${r.reason}">${r.label}</span>
+      <div class="track"></div><span class="v">N/S</span></div>`;
+  }).join('');
+  const overall = sc.overall_10 === null ? '—' : sc.overall_10.toFixed(1);
+  return `<div class="sc"><h3>Agent scorecard (quick)</h3>
+    <div class="overall"><span class="big">${overall}</span><span class="of">/ 10</span>
+      <span class="cov">${sc.evidence_points_covered}/${sc.evidence_points_total} evidence pts<br>
+      N/S = not scorable yet</span></div>${rows}</div>`;
+}
+
 async function analyze(t) {
   if (!t) return;
   sugg.style.display = 'none'; card.style.display = 'none';
@@ -195,13 +226,17 @@ async function analyze(t) {
         <span class="val">${n10(grow)} / 10</span></div>
         <div class="track"><div class="fill b" style="width:0%"></div></div></div>
       <div class="total"><span class="label">Financial category · coverage ${(c.coverage * 100).toFixed(0)}%</span>
-        <span class="pts">${c.points.toFixed(2)} <small>/ ${c.max_points} pts</small></span></div>`;
+        <span class="pts">${c.points.toFixed(2)} <small>/ ${c.max_points} pts</small></span></div>
+      ${scorecardHtml(d.scorecard)}`;
     card.style.display = 'block';
     status.textContent = '';
     requestAnimationFrame(() => {
       const fills = card.querySelectorAll('.fill');
       if (typeof prof === 'number') fills[0].style.width = (prof * 10) + '%';
       if (typeof grow === 'number') fills[1].style.width = (grow * 10) + '%';
+      card.querySelectorAll('.srow .fill[data-w]').forEach(f => {
+        f.style.width = f.dataset.w + '%';
+      });
     });
   } catch (err) {
     status.innerHTML = `Could not analyze <b>${t}</b>: ${err.message}`;
