@@ -259,8 +259,14 @@ def realized_vol(close: pd.Series, n: int) -> pd.Series:
 
 
 def volume_ratio(volume: pd.Series, n: int = 50) -> pd.Series:
-    """Volume ratio (TECH-VR-014): Volume_t / median(Volume over prior N sessions)."""
-    return volume / volume.rolling(n).median()
+    """Volume ratio (TECH-VR-014): Volume_t / median(Volume over prior N sessions).
+
+    The N-session median base excludes the current session (`shift(1)`) —
+    Cerebro TECH-VR-014 specifies the *prior* N sessions before t. A
+    trailing-inclusive median would contaminate its own base with the very
+    outlier the ratio exists to detect.
+    """
+    return volume / volume.shift(1).rolling(n).median()
 
 
 def up_down_volume_ratio(df: pd.DataFrame, n: int = 50) -> pd.Series:

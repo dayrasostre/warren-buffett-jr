@@ -187,11 +187,25 @@ def test_realized_vol_matches_inline_pandas():
     pd.testing.assert_series_equal(result, expected, check_names=False)
 
 
-def test_volume_ratio_vs_median_50d():
-    volume = pd.Series([100.0] * 49 + [400.0] + [1000.0])
-    result = volume_ratio(volume)
-    median_50 = volume.iloc[-51:-1].median()
-    assert abs(result.iloc[-1] - 1000.0 / median_50) < 1e-9
+def test_volume_ratio_uses_prior_n_median_excluding_current_session():
+    # Strictly increasing volume, no repeated dominant value, so the
+    # prior-50 window (sessions before t) and the trailing-inclusive-50
+    # window (which contains t) produce DIFFERENT medians. This
+    # discriminates the TECH-VR-014 "prior N sessions" rule: the assertion
+    # holds for shift(1).rolling(50) and fails for a trailing-inclusive
+    # rolling(50).
+    n = 50
+    volume = pd.Series([100.0 + i for i in range(60)])
+
+    result = volume_ratio(volume, n)
+
+    prior_median = volume.iloc[-(n + 1):-1].median()  # sessions before t
+    inclusive_median = volume.iloc[-n:].median()  # contaminated (contains t)
+    assert prior_median != inclusive_median  # the two conventions really differ here
+
+    assert abs(result.iloc[-1] - volume.iloc[-1] / prior_median) < 1e-9
+    # And explicitly NOT the trailing-inclusive value the old code produced.
+    assert abs(result.iloc[-1] - volume.iloc[-1] / inclusive_median) > 1e-6
 
 
 def test_up_down_volume_ratio_zero_denominator_is_not_meaningful():
