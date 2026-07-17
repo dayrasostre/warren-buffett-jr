@@ -50,11 +50,14 @@ El orquestador armará el packet de datos, correrá los 6 especialistas en paral
 
 ## Perfil del inversionista (resumen)
 
-- **Objetivo:** crecimiento de capital, horizonte 3–5 años
-- **Estilo:** agresivo y especulativo — acciones, ETF y opciones
+- **Objetivo:** crecimiento de capital, ingresos y libertad financiera — horizonte 1–3 años, con retiro parcial previsto en ese mismo plazo
+- **Estilo:** moderado a agresivo — acciones, ETF, opciones y bonos
+- **Tolerancia a pérdida:** 5–10%
 - **Universo:** solo Estados Unidos, sin forex
-- **Capital:** $25,000 USD — máx. 30–60% por posición
-- **Prioridad:** probabilidad de éxito, timing de entradas y salidas
+- **Capital:** $1,000 USD — máx. 30–60% por posición
+- **Prioridad:** equilibrio entre riesgo y rendimiento, puntos de entrada y salida
+
+El perfil completo vive en `Perfil Inversionista/Dayra Sostre.md` — este resumen es solo referencia.
 
 ## Límites
 

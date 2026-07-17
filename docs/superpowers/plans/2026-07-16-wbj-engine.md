@@ -575,7 +575,7 @@ Every specialist follows the same contract, so this pattern is stated once and *
 ### Task 18: Risk specialist (15 pts, higher = safer)
 
 **Files:** Create `engine/wbj/specialists/risk.py`; Test `engine/tests/specialists/test_risk.py`
-**Sources:** `Cerebro/05_risk_analysis/` (all 7 files), `Perfil Inversionista/Victor Gonzalez.md` (profile-fit inputs).
+**Sources:** `Cerebro/05_risk_analysis/` (all 7 files), `Perfil Inversionista/Dayra Sostre.md` (profile-fit inputs).
 
 **Key points:** RSK-001…035: annualized vol; downside deviation (MAR=0); beta 252/756d (needs benchmark; on prohibited list — never proxied); downside beta (min 30 down observations); max drawdown 1/3/5y + recovery time; historical VaR 95/99 (1d/10d) + CVaR (≥500 obs preferred, warning below); **Beneish M-score** `−4.84 + 0.920·DSRI + 0.528·GMI + 0.404·AQI + 0.892·SGI + 0.115·DEPI − 0.172·SGAI + 4.679·TATA − 0.327·LVGI` (flag > −1.78, screening only); **Altman Z″** `6.56·WC/TA + 3.26·RE/TA + 6.72·EBIT/TA + 1.05·BE/TL`; Piotroski F (0–9); cash runway `(cash + committed liquidity)/monthly burn`; maturity-wall coverage 12/24/36m. Dimensions: Financing 3 / Concentration 3 / Execution & earnings quality 3 / Regulatory-macro 2 / Valuation-compression 2 / Volatility & drawdown 2. Anchors: coverage <1.5/1.5–3/>3 (best >5); runway <12m/12–24m/>24m; 3y maxDD worse than −60% / −30–60% / better than −30%; downside beta >1.5/0.8–1.5/<0.8. Mandatory: `SOLVENCY_WARNING` text verbatim: "Operating earnings do not provide a comfortable interest buffer."; thesis killers (≥3) are judgment requests with computed early-warning metrics. Profile-fit section reads the Perfil file (position sizing vs 30–60% cap, horizon fit).
 
