@@ -17,6 +17,9 @@ jobs:
       - name: Send pre-market movers email
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # Destinatario: se configura como "Repository variable" EMAIL_TO en
+          # GitHub (Settings → Secrets and variables → Actions → Variables).
+          EMAIL_TO: ${{ vars.EMAIL_TO }}
           # En corrida manual, salta el chequeo de hora/feriado:
           FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
         run: python3 scripts/premarket_email.py
