@@ -204,6 +204,45 @@ def test_scenarios_weighted_value_matches_probability_sum():
     assert result.weighted_value.value == pytest.approx(expected_weighted)
 
 
+def test_scenario_offending_branch_refused_others_still_compute():
+    """A single scenario with tv_growth >= wacc (e.g. an aggressive bull with
+    a low WACC) must refuse *only that branch* (NOT_MEANINGFUL + warning) and
+    still compute bear/base — never crash all three with an unhandled
+    ValueError from the shared pricing model."""
+    bear = ScenarioInput(probability=0.25, growth=0.0, margin=0.15, wacc=0.10, tv_growth=0.02)
+    base = ScenarioInput(probability=0.50, growth=0.04, margin=0.20, wacc=0.09, tv_growth=0.025)
+    # bull: tv_growth (0.09) >= wacc (0.08) -> offending branch
+    bull = ScenarioInput(probability=0.25, growth=0.06, margin=0.25, wacc=0.08, tv_growth=0.09)
+    common = DCFCommonInputs(revenue0=1000.0, shares=100.0, tax_rate=0.25, roic=0.30, years=5, net_debt=200.0)
+
+    result = ve.scenarios(bear, base, bull, common)
+
+    assert result.bear_value.is_valid
+    assert result.base_value.is_valid
+    assert result.bull_value.is_null and result.bull_value.state == NullState.NOT_MEANINGFUL
+    assert any("TERMINAL_GROWTH_GE_WACC" in w for w in result.bull_value.warnings)
+    # weighted value cannot include a refused branch -> refused too, with a warning.
+    assert result.weighted_value.is_null and result.weighted_value.state == NullState.NOT_MEANINGFUL
+    assert result.warnings
+
+
+def test_reverse_dcf_invalid_inputs_g_ge_wacc_distinct_from_no_bracket():
+    """base_inputs with tv_growth >= wacc is an economically invalid input,
+    not a 'root not bracketed' failure — it must be diagnosed BEFORE brentq
+    is called and reported with its own INVALID_INPUTS_G_GE_WACC warning
+    (never mislabeled NO_SIGN_CHANGE_IN_GROWTH_BOUNDS)."""
+    inputs = ReverseDCFInputs(
+        **_RDCF_COMMON, margin=0.20, wacc=0.05, tv_growth=0.08,  # tv_growth >= wacc
+    )
+    result = ve.reverse_dcf(price=15.0, shares=_RDCF_COMMON["shares"], base_inputs=inputs)
+    assert not result.converged
+    assert result.implied_growth.is_null and result.implied_growth.state == NullState.NOT_MEANINGFUL
+    assert any("INVALID_INPUTS_G_GE_WACC" in w for w in result.implied_growth.warnings)
+    # the diagnosis must NOT be the no-bracket one
+    assert not any("NO_SIGN_CHANGE" in w for w in result.implied_growth.warnings)
+    assert any("INVALID_INPUTS_G_GE_WACC" in w for w in result.warnings)
+
+
 def test_economic_profit_reconciles_with_fcff():
     """IC0=1000, ROIC=15%, WACC=10%, constant g=5% (< WACC) throughout,
     reinvestment_rate = g/ROIC = 1/3 every year -> FCFF-DCF EV must

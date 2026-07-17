@@ -621,6 +621,12 @@ def _constant_growth_per_share(
     growth: float, margin: float, wacc_value: float, tv_growth: float,
     revenue0: float, tax_rate: float, roic_value: float, years: int, shares: float, net_debt: float,
 ) -> float:
+    # Single source of truth for the g>=WACC refusal, shared with the
+    # Value-returning `gordon_terminal_value`: this float core raises so any
+    # caller that forgets to guard fails loudly rather than silently pricing
+    # a meaningless negative terminal value; `_constant_growth_value` and the
+    # per-scenario/reverse-DCF guards below convert that condition into a
+    # graceful `NOT_MEANINGFUL` Value at the public boundary.
     if tv_growth >= wacc_value:
         raise ValueError("terminal growth >= wacc: not meaningful")
     revenue = revenue0
@@ -643,6 +649,25 @@ def _constant_growth_per_share(
     return equity / shares
 
 
+def _constant_growth_value(
+    growth: float, margin: float, wacc_value: float, tv_growth: float,
+    revenue0: float, tax_rate: float, roic_value: float, years: int, shares: float, net_debt: float,
+) -> Value:
+    """Value-returning boundary around `_constant_growth_per_share`: converts
+    the `g >= WACC` refusal into a graceful `NOT_MEANINGFUL` Value (with a
+    `TERMINAL_GROWTH_GE_WACC` warning) instead of letting the float core's
+    `ValueError` escape. Used by `scenarios` (per-branch) so one bad scenario
+    refuses only its own branch rather than crashing all three."""
+    if tv_growth >= wacc_value:
+        return _null(NullState.NOT_MEANINGFUL, "usd_per_share", "TERMINAL_GROWTH_GE_WACC")
+    v = _constant_growth_per_share(
+        growth, margin, wacc_value, tv_growth,
+        revenue0=revenue0, tax_rate=tax_rate, roic_value=roic_value,
+        years=years, shares=shares, net_debt=net_debt,
+    )
+    return _ok(v, "usd_per_share")
+
+
 @register_formula(id="VAL-RDCF-027", version=_VERSION, unit="pct", inputs=["price", "shares", "base_inputs"])
 def reverse_dcf(price: float, shares: float, base_inputs: ReverseDCFInputs) -> ReverseDCFResult:
     """Reverse DCF (Cerebro 13, VAL-RDCF-027): solve for the implied revenue
@@ -650,6 +675,20 @@ def reverse_dcf(price: float, shares: float, base_inputs: ReverseDCFInputs) -> R
     margin at `base_inputs.margin`), then the implied terminal operating
     margin (holding growth at `base_inputs.consensus_growth`, defaulting to
     the just-solved implied growth)."""
+    # Economically-invalid inputs (terminal growth >= WACC) are diagnosed up
+    # front, BEFORE brentq — otherwise the float pricing core raises the same
+    # ValueError brentq raises when it can't bracket a root, and the two get
+    # conflated into a misleading NO_SIGN_CHANGE_IN_GROWTH_BOUNDS diagnosis.
+    if base_inputs.tv_growth >= base_inputs.wacc:
+        null = _null(NullState.NOT_MEANINGFUL, "pct", "INVALID_INPUTS_G_GE_WACC")
+        return ReverseDCFResult(
+            implied_growth=null,
+            implied_margin=null,
+            consensus_growth_used=base_inputs.consensus_growth or 0.0,
+            converged=False,
+            warnings=["reverse_dcf: INVALID_INPUTS_G_GE_WACC (terminal growth >= WACC)"],
+        )
+
     common = dict(
         revenue0=base_inputs.revenue0, tax_rate=base_inputs.tax_rate, roic_value=base_inputs.roic,
         years=base_inputs.years, shares=shares, net_debt=base_inputs.net_debt,
@@ -712,21 +751,41 @@ def scenarios(bear: ScenarioInput, base: ScenarioInput, bull: ScenarioInput, com
     if abs(total_p - 1.0) > 1e-9:
         raise ValueError(f"scenario probabilities must sum to 1.0, got {total_p}")
 
-    def value_of(s: ScenarioInput) -> float:
-        return _constant_growth_per_share(
+    def value_of(s: ScenarioInput) -> Value:
+        # Per-branch Value boundary: an offending scenario (tv_growth >= wacc)
+        # refuses only ITS OWN branch (NOT_MEANINGFUL) rather than raising and
+        # tumbling the other two — reverse_dcf/monte_carlo already guard this
+        # condition; scenarios now does too, via the shared wrapper.
+        return _constant_growth_value(
             s.growth, s.margin, s.wacc, s.tv_growth,
             revenue0=common.revenue0, tax_rate=common.tax_rate, roic_value=common.roic,
             years=common.years, shares=common.shares, net_debt=common.net_debt,
         )
 
     bear_v, base_v, bull_v = value_of(bear), value_of(base), value_of(bull)
-    weighted = bear.probability * bear_v + base.probability * base_v + bull.probability * bull_v
+
+    # A probability-weighted mean can't be formed while any branch is refused
+    # (its value is genuinely unknown, not zero) — refuse the aggregate too.
+    if bear_v.is_null or base_v.is_null or bull_v.is_null:
+        weighted = _null(
+            NullState.NOT_MEANINGFUL, "usd_per_share",
+            "WEIGHTED_VALUE_UNDEFINED_REFUSED_SCENARIO",
+        )
+        warnings = ["scenarios: at least one branch refused (g >= WACC); weighted value not computable"]
+    else:
+        weighted = _ok(
+            bear.probability * bear_v.value + base.probability * base_v.value + bull.probability * bull_v.value,
+            "usd_per_share",
+        )
+        warnings = []
+
     return ScenarioResult(
-        bear_value=_ok(bear_v, "usd_per_share"),
-        base_value=_ok(base_v, "usd_per_share"),
-        bull_value=_ok(bull_v, "usd_per_share"),
-        weighted_value=_ok(weighted, "usd_per_share"),
+        bear_value=bear_v,
+        base_value=base_v,
+        bull_value=bull_v,
+        weighted_value=weighted,
         probabilities_sum=total_p,
+        warnings=warnings,
     )
 
 

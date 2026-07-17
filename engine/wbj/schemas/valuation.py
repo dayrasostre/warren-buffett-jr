@@ -110,6 +110,7 @@ class ScenarioResult(BaseModel):
     bull_value: Value
     weighted_value: Value
     probabilities_sum: float
+    warnings: list[str] = Field(default_factory=list)
 
 
 class MonteCarloRange(BaseModel):
