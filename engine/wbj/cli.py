@@ -32,7 +32,10 @@ _REVENUE_TAGS = [
 ]
 _NET_INCOME_TAGS = ["NetIncomeLoss"]
 _OCF_TAGS = ["NetCashProvidedByUsedInOperatingActivities"]
-_CAPEX_TAGS = ["PaymentsToAcquirePropertyPlantAndEquipment"]
+_CAPEX_TAGS = [
+    "PaymentsToAcquirePropertyPlantAndEquipment",
+    "PaymentsToAcquireProductiveAssets",
+]
 _DEBT_TAGS = ["LongTermDebtNoncurrent", "LongTermDebt"]
 _EQUITY_TAGS = ["StockholdersEquity"]
 _OP_INCOME_TAGS = ["OperatingIncomeLoss"]
@@ -56,20 +59,51 @@ def _providers():
     return settings, EdgarProvider(settings, cache), FMPProvider(settings, cache)
 
 
+# A 10-K carries both the fiscal year and its Q4 under fp="FY", and both can
+# share an `end`. Fiscal years drift a few days off 365, so match on a window.
+_ANNUAL_MIN_DAYS = 300
+_ANNUAL_MAX_DAYS = 400
+
+
+def _covers_a_fiscal_year(row: dict) -> bool:
+    """True if `row` spans a fiscal year, or is an instant (balance-sheet) fact."""
+    start = row.get("start")
+    if not start:
+        return True
+    try:
+        days = (date.fromisoformat(row["end"]) - date.fromisoformat(start)).days
+    except (KeyError, ValueError):
+        return False
+    return _ANNUAL_MIN_DAYS <= days <= _ANNUAL_MAX_DAYS
+
+
 def _annual_series(facts: dict, tags: list[str]) -> list[dict]:
-    """Extract annual (10-K FY) datapoints for the first tag that has data."""
+    """Extract annual (10-K FY) datapoints, merging `tags` in preference order.
+
+    Issuers switch us-gaap tags over time (e.g. Revenues ->
+    RevenueFromContractWithCustomerExcludingAssessedTax on ASC 606 adoption),
+    so no single tag spans the full history. Earlier tags win a fiscal year
+    outright; later ones only fill the years they left empty.
+    """
     gaap = facts.get("facts", {}).get("us-gaap", {})
+    by_end: dict[str, dict] = {}
     for tag in tags:
         units = gaap.get(tag, {}).get("units", {})
         rows = units.get("USD") or units.get("shares") or []
-        annual = [r for r in rows if r.get("form") == "10-K" and r.get("fp") == "FY"]
-        if annual:
-            # Deduplicate restatements: keep the latest filing per fiscal year end.
-            by_end: dict[str, dict] = {}
-            for r in sorted(annual, key=lambda r: r.get("filed", "")):
-                by_end[r["end"]] = r
-            return sorted(by_end.values(), key=lambda r: r["end"])
-    return []
+        annual = [
+            r
+            for r in rows
+            if r.get("form") == "10-K"
+            and r.get("fp") == "FY"
+            and _covers_a_fiscal_year(r)
+        ]
+        # Deduplicate restatements: keep the latest filing per fiscal year end.
+        latest_per_end: dict[str, dict] = {}
+        for r in sorted(annual, key=lambda r: r.get("filed", "")):
+            latest_per_end[r["end"]] = r
+        for end, row in latest_per_end.items():
+            by_end.setdefault(end, row)
+    return sorted(by_end.values(), key=lambda r: r["end"])
 
 
 def _latest(series: list[dict]) -> float | None:
